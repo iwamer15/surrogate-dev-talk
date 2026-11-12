@@ -15,7 +15,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:#07090c;overflow:hidden;font-family:var(--f);color:var(--ink)}
 #viewport{position:fixed;inset:0;display:grid;place-items:center}
-#stage{width:1920px;height:1080px;position:relative;transform-origin:center center;background:var(--bg);overflow:hidden}
+#stage{width:1920px;height:1080px;position:absolute;left:50%;top:50%;transform-origin:center center;background:var(--bg);overflow:hidden}
 .slide{position:absolute;inset:0;padding:110px 140px 150px;opacity:0;pointer-events:none;transition:opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1);transform:translateX(60px)}
 .slide.active{opacity:1;pointer-events:auto;transform:none}
 .slide.past{transform:translateX(-60px)}
@@ -309,7 +309,7 @@ const slides=[...document.querySelectorAll('.slide')];
 let cur=0, step=-1;
 const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);stage.style.transform=`scale(${s})`;}
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);stage.style.transform=`translate(-50%,-50%) scale(${s})`;}
 addEventListener('resize',fit);fit();
 
 function maxStep(i){let m=-1;slides[i].querySelectorAll('.f').forEach(e=>m=Math.max(m,+e.dataset.step));return m;}
