@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>サロゲート開発の取り組み — 学習データ構築を支えるツール開発</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0f141a; --bg2:#161d25; --panel:#1c252f; --line:#2b3642;
+  --ink:#e9edf1; --mute:#93a1ae; --steel:#6ea3d1; --molten:#ff6a2b; --hot:#ffb347; --ok:#3fc48f; --bad:#e8505b;
+  --f:"Noto Sans JP","Yu Gothic UI","Meiryo","Hiragino Sans",sans-serif; --m:"JetBrains Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#07090c;overflow:hidden;font-family:var(--f);color:var(--ink)}
+#viewport{position:fixed;inset:0;display:grid;place-items:center}
+#stage{width:1920px;height:1080px;position:relative;transform-origin:center center;background:var(--bg);overflow:hidden}
+.slide{position:absolute;inset:0;padding:110px 140px 150px;opacity:0;pointer-events:none;transition:opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1);transform:translateX(60px)}
+.slide.active{opacity:1;pointer-events:auto;transform:none}
+.slide.past{transform:translateX(-60px)}
+.kicker{font-family:var(--m);font-size:24px;letter-spacing:.18em;color:var(--molten);text-transform:uppercase;margin-bottom:18px}
+h1{font-size:96px;font-weight:900;line-height:1.15;letter-spacing:.01em}
+h2{font-size:64px;font-weight:900;line-height:1.2;margin-bottom:48px}
+.lead{font-size:34px;color:var(--mute);line-height:1.6}
+.hl{color:var(--molten)} .st{color:var(--steel)} .ok{color:var(--ok)}
+/* fragments */
+.f{opacity:0;transform:translateY(24px);transition:opacity .55s ease, transform .55s cubic-bezier(.2,.7,.2,1)}
+.f.on{opacity:1;transform:none}
+/* footer */
+#footer{position:absolute;left:140px;right:140px;bottom:56px;display:flex;justify-content:space-between;align-items:center;font-size:22px;color:var(--mute);z-index:5}
+#footer .brand{font-family:var(--m);letter-spacing:.1em}
+#progress{position:absolute;left:0;bottom:0;height:6px;background:linear-gradient(90deg,var(--steel),var(--molten));transition:width .6s ease;z-index:5}
+/* cards */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:36px 40px}
+.card h3{font-size:34px;font-weight:700;margin-bottom:14px}
+.card p{font-size:26px;line-height:1.6;color:var(--mute)}
+.tag{display:inline-block;font-family:var(--m);font-size:20px;padding:6px 14px;border-radius:999px;border:1px solid var(--line);color:var(--steel);margin:0 10px 10px 0}
+/* ---- slide 1 ---- */
+#s1{display:grid;grid-template-columns:1fr 760px;gap:60px;align-items:center;padding-top:80px}
+#s1 .sub{font-size:36px;color:var(--mute);margin-top:36px;line-height:1.5}
+#s1 .who{margin-top:70px;font-size:26px;color:var(--mute);border-left:4px solid var(--molten);padding-left:20px;line-height:1.7}
+#voxel{width:760px;height:620px}
+.legend{display:flex;gap:28px;font-size:22px;color:var(--mute);margin-top:14px;justify-content:center;align-items:center}
+.legend i{display:inline-block;width:18px;height:18px;border-radius:4px;margin-right:8px;vertical-align:-3px}
+/* ---- slide 2 ---- */
+.cycle{position:relative;height:560px}
+.cycle svg{position:absolute;inset:0}
+.node{position:absolute;width:250px;padding:26px 0;text-align:center;background:var(--panel);border:1px solid var(--line);border-radius:16px;font-size:30px;font-weight:700}
+.node small{display:block;font-size:22px;color:var(--mute);font-weight:400;margin-top:6px}
+.node.slow{border-color:var(--bad);box-shadow:0 0 0 1px var(--bad) inset}
+.node.slow small{color:var(--bad);font-family:var(--m)}
+.draw{stroke-dasharray:1400;stroke-dashoffset:1400;transition:stroke-dashoffset 1.6s ease}
+.on .draw,.draw.on{stroke-dashoffset:0}
+.ai-chip{position:absolute;left:50%;top:430px;transform:translateX(-50%);background:linear-gradient(90deg,#2a1a10,#3a2010);border:1px solid var(--molten);border-radius:999px;padding:18px 44px;font-size:32px;font-weight:700;white-space:nowrap}
+.ai-chip b{color:var(--hot);font-family:var(--m)}
+/* ---- slide 3 ---- */
+.flow{display:flex;align-items:center;gap:26px;margin-top:20px}
+.flow .box{flex:1;height:360px;background:var(--panel);border:1px solid var(--line);border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;position:relative;overflow:hidden}
+.flow .box .lbl{font-size:30px;font-weight:700}
+.flow .box .s{font-size:22px;color:var(--mute)}
+.arrow{width:70px;height:30px;flex:none}
+.arrow path{stroke:var(--steel);stroke-width:4;fill:none}
+.pulse{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+.netdots circle{fill:var(--steel)}
+.netdots line{stroke:#3c4b5a;stroke-width:1.5}
+.note-row{display:flex;gap:28px;margin-top:44px}
+.note-row .card{flex:1;padding:28px 34px}
+/* ---- slide 4 ---- */
+#s4{display:grid;grid-template-columns:820px 1fr;gap:70px;align-items:center}
+.big{font-size:84px;font-weight:900;line-height:1.25}
+.chaos{position:relative;height:720px}
+.chip{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 24px;font-size:26px;white-space:nowrap;box-shadow:0 10px 30px rgba(0,0,0,.35);transition:left 1.2s cubic-bezier(.3,.7,.2,1),top 1.2s cubic-bezier(.3,.7,.2,1),transform 1.2s,border-color .6s}
+.chip small{display:block;font-family:var(--m);font-size:18px;color:var(--bad);margin-top:4px}
+.chip.wobble{animation:wob 3.2s ease-in-out infinite}
+@keyframes wob{0%,100%{translate:0 0}50%{translate:0 -12px}}
+/* ---- slide 5 ---- */
+#s5 .wrap{display:grid;grid-template-columns:1fr 760px;gap:60px}
+.mock{background:#0b1015;border:1px solid var(--line);border-radius:16px;overflow:hidden;font-size:22px}
+.mock .bar{background:#18202a;padding:14px 20px;display:flex;gap:10px;align-items:center;font-family:var(--m);font-size:18px;color:var(--mute)}
+.mock .bar i{width:12px;height:12px;border-radius:50%;background:#3a4653;display:inline-block}
+.mock table{width:100%;border-collapse:collapse}
+.mock th,.mock td{padding:13px 18px;border-bottom:1px solid #1d2731;text-align:left}
+.mock th{font-size:18px;color:var(--mute);font-weight:500;font-family:var(--m)}
+.mock td.raw{font-family:var(--m);color:#8792a0;font-size:19px}
+.mock td.map{color:var(--ink)}
+.hbar{height:14px;border-radius:7px;background:linear-gradient(90deg,var(--steel),var(--molten));width:0;transition:width 1.2s cubic-bezier(.2,.7,.2,1)}
+.mock tr.warn td{background:rgba(232,80,91,.08)}
+.mock tr.warn td.map{color:var(--bad)}
+.feat{display:flex;flex-direction:column;gap:22px}
+.feat .card{padding:26px 32px;display:flex;gap:22px;align-items:flex-start}
+.feat .ic{flex:none;width:52px;height:52px;border-radius:12px;background:#24303c;display:grid;place-items:center;font-family:var(--m);font-weight:700;color:var(--molten);font-size:24px}
+.feat h3{font-size:30px;margin-bottom:6px}
+.feat p{font-size:23px}
+/* ---- slide 6 ---- */
+#pipe{width:1640px;height:430px;display:block}
+.stages{display:grid;grid-template-columns:repeat(5,1fr);gap:18px;margin-top:10px}
+.stages .card{padding:22px 24px;text-align:center}
+.stages h3{font-size:28px;margin-bottom:6px}
+.stages p{font-size:20px}
+.stages .n{font-family:var(--m);color:var(--molten);font-size:20px;display:block;margin-bottom:6px}
+.stack{margin-top:26px;text-align:center}
+/* ---- slide 7 ---- */
+#s7{background:radial-gradient(1200px 700px at 75% 60%,#2a170d 0%,var(--bg) 60%);display:flex;flex-direction:column;justify-content:center}
+#s7 .big{font-size:92px}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:70px}
+.kpi{border-top:3px solid var(--molten);padding-top:22px}
+.kpi .v{font-family:var(--m);font-size:72px;font-weight:700;color:var(--hot)}
+.kpi .k{font-size:26px;color:var(--mute);margin-top:6px}
+/* ---- slide 8 ---- */
+.stairs{position:relative;height:560px;margin-top:10px}
+.step{position:absolute;width:390px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px 30px}
+.step h3{font-size:34px;margin-bottom:8px}
+.step p{font-size:23px;color:var(--mute);line-height:1.5}
+.step .no{font-family:var(--m);font-size:20px;color:var(--steel)}
+.step.now{border-color:var(--molten);box-shadow:0 0 40px rgba(255,106,43,.25)}
+.here{position:absolute;font-family:var(--m);font-size:22px;background:var(--molten);color:#160b05;font-weight:700;padding:8px 16px;border-radius:8px;white-space:nowrap}
+.here::after{content:"";position:absolute;left:50%;bottom:-10px;margin-left:-10px;border:10px solid transparent;border-bottom:0;border-top-color:var(--molten)}
+/* presenter UI */
+#hud{position:fixed;right:16px;top:16px;display:flex;gap:10px;z-index:20;font-family:var(--m);font-size:14px;opacity:.25;transition:opacity .3s}
+#hud:hover{opacity:1}
+#hud button{background:#1b232c;color:#cfd8e0;border:1px solid #2e3a46;border-radius:8px;padding:8px 12px;cursor:pointer;font:inherit}
+#timer{position:fixed;left:16px;top:16px;z-index:20;font-family:var(--m);background:#11171dcc;border:1px solid #2e3a46;border-radius:10px;padding:10px 14px;color:#cfd8e0;font-size:15px;display:none;min-width:250px}
+#timer .row{display:flex;justify-content:space-between;gap:16px}
+#timer .tb{height:5px;background:#26313c;border-radius:3px;margin-top:8px;overflow:hidden}
+#timer .tb div{height:100%;background:var(--ok);width:0}
+#timer.over .tb div{background:var(--bad)}
+#notes{position:fixed;left:16px;right:16px;bottom:16px;z-index:20;background:#0d1217ee;border:1px solid #2e3a46;border-radius:12px;padding:16px 20px;font-size:17px;line-height:1.7;color:#d6dee6;display:none;max-height:32vh;overflow:auto}
+#notes b{color:var(--hot);font-family:var(--m)}
+#help{position:fixed;inset:0;z-index:30;background:#000a;display:none;place-items:center}
+#help .in{background:#151c23;border:1px solid #2e3a46;border-radius:14px;padding:28px 34px;font-size:17px;line-height:2;color:#d6dee6}
+#help kbd{font-family:var(--m);background:#26313c;border-radius:6px;padding:2px 8px;margin-right:8px}
+@media (prefers-reduced-motion:reduce){.slide,.f,.chip,.hbar,.draw{transition:none!important}.chip.wobble,.pulse{animation:none}}
+</style>
+</head>
+<body>
+<div id="viewport"><div id="stage">
+
+<!-- 1 TITLE -->
+<section class="slide" id="s1" data-time="20" data-notes="<b>0:00–0:20</b> 本日はサロゲート開発でこれまで取り組んできたことを5分でご報告します。結論から言うと、モデルそのものよりも『学習データをどう作るか』が鍵で、そのためのデータ確認・集約ツールを開発しました。右の図は凝固の進み方のイメージで、最後に固まる箇所が引け巣リスクになります。">
+  <div>
+    <div class="kicker">Surrogate Model Development</div>
+    <h1>サロゲート開発の<br><span class="hl">取り組み</span></h1>
+    <p class="sub">学習データ構築を支える<br>データ確認・集約ツールの開発</p>
+    <p class="who">CAE（鋳造解析）担当　岩谷 翔平<br>[報告日 2026/__/__]</p>
+  </div>
+  <div>
+    <canvas id="voxel" width="1520" height="1240" aria-label="ボクセル形状の凝固進行アニメーション"></canvas>
+    <div class="legend"><span><i style="background:#ff6a2b"></i>液相</span><span><i style="background:#5f7487"></i>固相</span><span><i style="background:#0f141a;border:2px dashed #ffb347"></i>最終凝固部（引け巣リスク）</span></div>
+  </div>
+</section>
+
+<!-- 2 BACKGROUND -->
+<section class="slide" id="s2" data-time="35" data-notes="<b>0:20–0:55</b> 背景です。鋳造解析は形状受領からメッシュ作成、条件設定、計算、評価という流れで、特に計算に1ケース[__]時間かかります。条件を振るたびにこのサイクルを回すため、設計・製造への回答が遅れがちです。（→）そこで、過去の解析結果を学習したサロゲートモデルで、数秒で凝固・引け巣の傾向を予測し、検討サイクルを短縮することを目指しました。">
+  <div class="kicker">01 / 背景</div>
+  <h2>CAEの検討サイクルが<span class="hl">長い</span></h2>
+  <div class="cycle">
+    <svg viewBox="0 0 1640 560" aria-hidden="true">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#6ea3d1"/></marker>
+      <marker id="ah2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#ff6a2b"/></marker></defs>
+      <g class="f" data-step="0">
+        <path class="draw" d="M265 120 H 385" stroke="#6ea3d1" stroke-width="4" marker-end="url(#ah)"/>
+        <path class="draw" d="M655 120 H 775" stroke="#6ea3d1" stroke-width="4" marker-end="url(#ah)"/>
+        <path class="draw" d="M1045 120 H 1165" stroke="#6ea3d1" stroke-width="4" marker-end="url(#ah)"/>
+        <path class="draw" d="M1435 160 C 1560 160 1560 330 1300 330 L 300 330 C 80 330 80 160 130 160" stroke="#6ea3d1" stroke-width="3" stroke-dasharray="10 10" fill="none" marker-end="url(#ah)" style="stroke-dasharray:none"/>
+      </g>
+      <g class="f" data-step="1"><path class="draw" d="M140 200 C 300 520 1340 520 1500 200" stroke="#ff6a2b" stroke-width="5" fill="none" marker-end="url(#ah2)"/></g>
+    </svg>
+    <div class="node" style="left:15px;top:58px">形状・メッシュ<small>STL → ボクセル</small></div>
+    <div class="node" style="left:405px;top:58px">条件設定<small>材料・境界条件</small></div>
+    <div class="node slow" style="left:795px;top:58px">計算<small>1ケース [__] h</small></div>
+    <div class="node" style="left:1185px;top:58px">評価・提案<small>引け巣・湯流れ</small></div>
+    <div style="position:absolute;left:0;right:0;top:350px;text-align:center;font-size:26px;color:var(--mute)" class="f" data-step="0">条件を振るたびに繰り返し … 回答まで [__] 日</div>
+    <div class="ai-chip f" data-step="1">AIサロゲートで凝固・引け巣傾向を <b>数秒</b> で予測</div>
+  </div>
+</section>
+
+<!-- 3 MODEL -->
+<section class="slide" id="s3" data-time="40" data-notes="<b>0:55–1:35</b> 取り組みの一つ目はモデル検討です。形状をボクセル化して入力し、凝固時間の分布を出力、そこから最終凝固部＝引け巣リスクを判定する構成です。GeoTransolver / PhysicsNeMo といった形状を扱えるモデルを検証しました。（→）検証を進める中で、精度を左右しているのはモデル構造よりも学習データの質と量だ、ということが見えてきました。">
+  <div class="kicker">02 / 取り組み① モデル検討</div>
+  <h2>形状から<span class="hl">凝固時間</span>を予測する</h2>
+  <div class="flow">
+    <div class="box f" data-step="0">
+      <svg width="200" height="170" viewBox="0 0 200 170" aria-hidden="true" id="vox-mini"></svg>
+      <div class="lbl">形状（ボクセル）</div><div class="s">STL → 3D格子</div>
+    </div>
+    <svg class="arrow f" data-step="0" viewBox="0 0 70 30"><path d="M2 15 H60 M48 4 L62 15 L48 26"/></svg>
+    <div class="box f" data-step="0">
+      <svg width="220" height="170" viewBox="0 0 220 170" class="netdots" aria-hidden="true" id="net"></svg>
+      <div class="lbl">サロゲートモデル</div><div class="s">GeoTransolver / PhysicsNeMo</div>
+    </div>
+    <svg class="arrow f" data-step="0" viewBox="0 0 70 30"><path d="M2 15 H60 M48 4 L62 15 L48 26"/></svg>
+    <div class="box f" data-step="0">
+      <svg width="200" height="170" viewBox="0 0 200 170" aria-hidden="true" id="vox-out"></svg>
+      <div class="lbl">凝固時間分布</div><div class="s">→ 最終凝固部 ＝ <span class="hl">引け巣</span>リスク</div>
+    </div>
+  </div>
+  <div class="note-row">
+    <div class="card f" data-step="1"><h3>わかったこと</h3><p>精度を左右するのはモデル構造より<span class="hl" style="font-weight:700">学習データの質と量</span></p></div>
+    <div class="card f" data-step="1"><h3>検証状況</h3><p>[検証ケース数 __ 件 ／ 誤差 __ %]</p></div>
+  </div>
+</section>
+
+<!-- 4 WALL -->
+<section class="slide" id="s4" data-time="40" data-notes="<b>1:35–2:15</b> では学習データの何が問題だったか。過去の解析データは、条件ファイルがShift-JISで読みにくい、メッシュの部品名が人によってバラバラ、熱伝達係数などの条件がケースごとに違う、どのフォルダの結果が最終版かわからない…と散らばった状態でした。（→）この状態のまま学習させても精度は出ません。まず『確認できる』『集められる』状態にすることが先決だと判断しました。">
+  <div>
+    <div class="kicker">03 / 見えてきた課題</div>
+    <p class="big">壁は<br>モデルではなく<br><span class="hl">データ</span>だった</p>
+    <p class="lead f" data-step="1" style="margin-top:40px">散らばったまま学習させても精度は出ない。<br>まず <b style="color:var(--ink)">「確認できる」「集められる」</b> 状態へ。</p>
+  </div>
+  <div class="chaos" id="chaos">
+    <div class="chip" data-x="40" data-y="40">condition_03.dat<small>Shift-JIS / 手で読めない</small></div>
+    <div class="chip" data-x="430" data-y="110">部品名「Mold_U」「上型」「UPPER」<small>名称が不統一</small></div>
+    <div class="chip" data-x="90" data-y="230">熱伝達係数 [__] W/m²K ?<small>ケースごとに違う</small></div>
+    <div class="chip" data-x="520" data-y="320">result_final_v2_修正.zip<small>どれが最終版？</small></div>
+    <div class="chip" data-x="20" data-y="430">個人PC・共有フォルダに点在<small>所在がわからない</small></div>
+    <div class="chip" data-x="460" data-y="540">実測との対応付けなし<small>正解ラベル不足</small></div>
+  </div>
+</section>
+
+<!-- 5 CHECK TOOL -->
+<section class="slide" id="s5" data-time="45" data-notes="<b>2:15–3:00</b> 取り組み②は『確認』のツールです。CAEの条件ファイルを読み込み、部品名を統一名にマッピングし、熱伝達係数などの条件を一覧・グラフで表示します。PowerShellと単体のHTMLで作ったので、Pythonが入っていないチームメンバーのPCでもそのまま動きます。（→）赤い行のように、マッピングできない部品や値の外れを一目で見つけられるので、学習に使う前にデータの不備を潰せます。">
+  <div class="kicker">04 / 取り組み② データ確認ツール</div>
+  <h2>解析条件を<span class="hl">一目で確認</span>する</h2>
+  <div class="wrap">
+    <div class="feat">
+      <div class="card f" data-step="0"><div class="ic">JP</div><div><h3>Shift-JIS の条件ファイルを読込</h3><p>文字化けなく、そのまま可視化</p></div></div>
+      <div class="card f" data-step="0"><div class="ic">⇄</div><div><h3>部品名を統一名へマッピング</h3><p>表記ゆれを吸収し、ケース間で比較可能に</p></div></div>
+      <div class="card f" data-step="0"><div class="ic">h</div><div><h3>熱伝達係数を一覧・グラフ表示</h3><p>設定漏れ・外れ値をその場で発見</p></div></div>
+      <div class="card f" data-step="1"><div class="ic">PS</div><div><h3>Python 不要で誰でも使える</h3><p>PowerShell ＋ 単体HTML、配布するだけ</p></div></div>
+    </div>
+    <div class="mock f" data-step="0" id="mock">
+      <div class="bar"><i></i><i></i><i></i>&nbsp;condition_viewer.html — case_[__]</div>
+      <table>
+        <tr><th>元の部品名</th><th>統一名</th><th>熱伝達係数</th></tr>
+        <tr><td class="raw">Mold_U</td><td class="map">上型</td><td><div class="hbar" data-w="72"></div></td></tr>
+        <tr><td class="raw">UPPER_DIE</td><td class="map">上型</td><td><div class="hbar" data-w="70"></div></td></tr>
+        <tr><td class="raw">下型_01</td><td class="map">下型</td><td><div class="hbar" data-w="64"></div></td></tr>
+        <tr><td class="raw">Core_A</td><td class="map">中子</td><td><div class="hbar" data-w="38"></div></td></tr>
+        <tr class="warn"><td class="raw">part_017</td><td class="map">未マッピング</td><td><div class="hbar" data-w="96"></div></td></tr>
+        <tr><td class="raw">Chill_1</td><td class="map">冷し金</td><td><div class="hbar" data-w="88"></div></td></tr>
+        <tr><td class="raw">Sleeve</td><td class="map">スリーブ</td><td><div class="hbar" data-w="30"></div></td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- 6 AGGREGATE TOOL -->
+<section class="slide" id="s6" data-time="50" data-notes="<b>3:00–3:50</b> 取り組み③は『集約』のツールです。散らばった解析ケースを収集し、確認ツールでチェックを通ったものだけを登録、DVCとGitでバージョン管理して、学習用データセットとして書き出します。アニメーションの赤い点が不備のあるデータで、確認の段階で除外されます。（→）アプリはElectron＋React、バックエンドはFastAPI＋SQLiteで、Windows環境で動かす想定です。">
+  <div class="kicker">05 / 取り組み③ データ集約ツール</div>
+  <h2>散らばったデータを<span class="hl">学習データ</span>へ集約</h2>
+  <canvas id="pipe" width="3280" height="860" aria-label="データが収集・確認・登録を経て学習データセットに整列するアニメーション"></canvas>
+  <div class="stages">
+    <div class="card"><span class="n">01</span><h3>収集</h3><p>各所の解析ケースを取込</p></div>
+    <div class="card"><span class="n">02</span><h3>確認</h3><p>条件・部品名をチェック</p></div>
+    <div class="card"><span class="n">03</span><h3>登録</h3><p>メタ情報付きでDB化</p></div>
+    <div class="card"><span class="n">04</span><h3>版管理</h3><p>DVC + Git で再現可能に</p></div>
+    <div class="card"><span class="n">05</span><h3>出力</h3><p>学習用データセット</p></div>
+  </div>
+  <div class="stack f" data-step="1"><span class="tag">Electron + React + TypeScript</span><span class="tag">FastAPI + SQLite</span><span class="tag">DVC + Git</span><span class="tag">YAML export</span><span class="tag">Windows 配布</span></div>
+</section>
+
+<!-- 7 CONCLUSION -->
+<section class="slide" id="s7" data-time="40" data-notes="<b>3:50–4:30</b> まとめです。サロゲートの精度を上げるには、まず学習データを正しく確認し、集約できる仕組みが必要でした。そのためのデータ確認ツールと集約ツールを開発しました。（→）現時点で、集約済みケース[__]件、確認作業の時間は[__]、ツール利用者は[__]名です。">
+  <div class="kicker">06 / 結論</div>
+  <p class="big">サロゲート精度の土台として<br><span class="hl">学習データの確認・集約ツール</span><br>を開発した</p>
+  <div class="kpis f" data-step="1">
+    <div class="kpi"><div class="v">[__]件</div><div class="k">集約済み解析ケース</div></div>
+    <div class="kpi"><div class="v">[__]→[__]</div><div class="k">1ケースあたりの確認時間</div></div>
+    <div class="kpi"><div class="v">[__]名</div><div class="k">Python不要で使えるメンバー</div></div>
+  </div>
+</section>
+
+<!-- 8 NEXT -->
+<section class="slide" id="s8" data-time="30" data-notes="<b>4:30–5:00</b> 今後の進め方です。標準化と蓄積の土台ができつつあるので、次は実測との比較による精度検証（V&V）を経て、AI予測を設計・製造への条件提案に使える段階へ進めます。ご協力のお願いとして、[過去解析データ・実測データの提供 など] をお願いできればと思います。以上です。">
+  <div class="kicker">07 / 今後</div>
+  <h2>土台の上に<span class="hl">予測</span>を積み上げる</h2>
+  <div class="stairs">
+    <div class="step f" data-step="0" style="left:0;top:330px"><span class="no">STEP 1</span><h3>標準化</h3><p>条件・部品名・フォルダ構成を統一</p></div>
+    <div class="step now f" data-step="0" style="left:420px;top:220px"><span class="no">STEP 2</span><h3>蓄積</h3><p>確認・集約ツールでデータを貯める</p></div>
+    <div class="step f" data-step="1" style="left:840px;top:110px"><span class="no">STEP 3</span><h3>V&amp;V</h3><p>実測との比較で精度を検証</p></div>
+    <div class="step f" data-step="1" style="left:1260px;top:0"><span class="no">STEP 4</span><h3>AI予測</h3><p>設計・製造へ条件を即時提案</p></div>
+    <div class="here f" data-step="0" style="left:540px;top:150px">いまここ</div>
+  </div>
+</section>
+
+<div id="footer"><span class="brand">SURROGATE × CAE</span><span id="pageno">1 / 8</span></div>
+<div id="progress"></div>
+</div></div>
+
+<div id="timer"><div class="row"><span>経過 <b id="tEl">0:00</b> / 5:00</span><span>このスライド <b id="tSl">0s</b>/<span id="tTg">0</span>s</span></div><div class="tb"><div id="tBar"></div></div></div>
+<div id="notes"></div>
+<div id="hud"><a id="bHome" href="../" style="background:#1b232c;color:#cfd8e0;border:1px solid #2e3a46;border-radius:8px;padding:8px 12px;text-decoration:none">⌂ Web版</a><button id="bPrev">◀</button><button id="bNext">▶</button><button id="bTimer">T タイマー</button><button id="bNotes">N ノート</button><button id="bFull">F 全画面</button><button id="bHelp">?</button></div>
+<div id="help"><div class="in">
+<div><kbd>→</kbd><kbd>Space</kbd>次へ（アニメーションを1段ずつ）</div>
+<div><kbd>←</kbd>前へ　<kbd>Home</kbd>先頭へ</div>
+<div><kbd>T</kbd>5分タイマー（スライドごとの目安つき）</div>
+<div><kbd>N</kbd>話す内容（スピーカーノート）</div>
+<div><kbd>F</kbd>全画面　<kbd>?</kbd>このヘルプ</div>
+<div><kbd>⌂</kbd>右上のボタンでWeb版（読み物）へ</div>
+<div style="color:#93a1ae">画面クリック／右側タップでも次へ進みます</div>
+</div></div>
+
+<script>
+(()=>{
+const stage=document.getElementById('stage');
+const slides=[...document.querySelectorAll('.slide')];
+let cur=0, step=-1;
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);stage.style.transform=`scale(${s})`;}
+addEventListener('resize',fit);fit();
+
+function maxStep(i){let m=-1;slides[i].querySelectorAll('.f').forEach(e=>m=Math.max(m,+e.dataset.step));return m;}
+function applySteps(){
+  slides[cur].querySelectorAll('.f').forEach(e=>e.classList.toggle('on',+e.dataset.step<=step));
+  hooks[cur]&&hooks[cur].step&&hooks[cur].step(step);
+}
+function show(i,s){
+  i=Math.max(0,Math.min(slides.length-1,i));
+  const prev=cur;
+  slides.forEach((sl,k)=>{sl.classList.toggle('active',k===i);sl.classList.toggle('past',k<i);});
+  if(prev!==i||s===undefined){hooks[prev]&&hooks[prev].leave&&hooks[prev].leave();}
+  cur=i;step=(s===undefined?0:s);
+  slides[i].querySelectorAll('.f').forEach(e=>e.classList.remove('on'));
+  hooks[i]&&hooks[i].enter&&hooks[i].enter();
+  requestAnimationFrame(()=>requestAnimationFrame(applySteps));
+  document.getElementById('pageno').textContent=`${i+1} / ${slides.length}`;
+  document.getElementById('progress').style.width=((i+1)/slides.length*100)+'%';
+  document.getElementById('notes').innerHTML=slides[i].dataset.notes||'';
+  slideStart=Date.now();
+  try{history.replaceState(null,'','#s'+(i+1));}catch(e){}
+}
+function next(){ if(!timerStarted)startTimer(true); if(step<maxStep(cur)){step++;applySteps();} else if(cur<slides.length-1) show(cur+1,0); }
+function prev(){ if(step>0){step--;applySteps();} else if(cur>0){show(cur-1,0);step=maxStep(cur);applySteps();} }
+
+/* timer */
+let t0=null,timerStarted=false,slideStart=Date.now();const T=document.getElementById('timer');
+function startTimer(silent){timerStarted=true;t0=Date.now();if(!silent)T.style.display='block';}
+setInterval(()=>{
+  const el=t0?(Date.now()-t0)/1000:0, sl=(Date.now()-slideStart)/1000, tg=+slides[cur].dataset.time||30;
+  document.getElementById('tEl').textContent=`${Math.floor(el/60)}:${String(Math.floor(el%60)).padStart(2,'0')}`;
+  document.getElementById('tSl').textContent=Math.floor(sl)+'s';document.getElementById('tTg').textContent=tg;
+  document.getElementById('tBar').style.width=Math.min(100,el/300*100)+'%';
+  T.classList.toggle('over',el>300||sl>tg*1.25);
+},250);
+
+/* input */
+addEventListener('keydown',e=>{
+  const k=e.key;
+  if(['ArrowRight','PageDown',' ','Enter'].includes(k)){e.preventDefault();next();}
+  else if(['ArrowLeft','PageUp','Backspace'].includes(k)){e.preventDefault();prev();}
+  else if(k==='Home')show(0,0);
+  else if(k==='End')show(slides.length-1,0);
+  else if(k==='t'||k==='T')toggleTimer();
+  else if(k==='n'||k==='N')toggleNotes();
+  else if(k==='f'||k==='F')toggleFull();
+  else if(k==='?'||k==='h')toggleHelp();
+  else if(/^[1-8]$/.test(k))show(+k-1,0);
+});
+document.getElementById('viewport').addEventListener('click',e=>{ (e.clientX<innerWidth*0.25)?prev():next(); });
+function toggleTimer(){ if(!timerStarted||T.style.display!=='block'){ if(!timerStarted)startTimer(); T.style.display='block'; } else T.style.display='none'; }
+function toggleNotes(){const n=document.getElementById('notes');n.style.display=n.style.display==='block'?'none':'block';}
+function toggleFull(){try{document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen().catch(()=>{});}catch(e){}}
+function toggleHelp(){const h=document.getElementById('help');h.style.display=h.style.display==='grid'?'none':'grid';}
+document.getElementById('help').addEventListener('click',toggleHelp);
+const b=(id,f)=>document.getElementById(id).addEventListener('click',e=>{e.stopPropagation();f();});
+b('bPrev',prev);b('bNext',next);b('bTimer',()=>{if(T.style.display==='block'){T.style.display='none'}else{if(!timerStarted)startTimer();T.style.display='block'}});
+b('bNotes',toggleNotes);b('bFull',toggleFull);b('bHelp',toggleHelp);
+
+/* ---------- slide hooks ---------- */
+const hooks={};
+
+/* S1 voxel solidification */
+(function(){
+  const cv=document.getElementById('voxel'),cx=cv.getContext('2d');
+  const W=38,H=31,c=40;
+  // casting-like shape: base plate + thick boss + rib + flange
+  const inS=(x,y)=> (y>=22&&y<=28&&x>=2&&x<=35) || (x>=11&&x<=24&&y>=8&&y<=22) || (x>=26&&x<=31&&y>=14&&y<=22) || (x>=5&&x<=9&&y>=17&&y<=22) || (x>=14&&x<=21&&y>=3&&y<=8);
+  // distance from mold wall (BFS)
+  const d=[],q=[];for(let y=0;y<H;y++){d[y]=[];for(let x=0;x<W;x++){d[y][x]=inS(x,y)?Infinity:0;if(!inS(x,y))q.push([x,y]);}}
+  for(let i=0;i<q.length;i++){const[x,y]=q[i];[[1,0],[-1,0],[0,1],[0,-1]].forEach(([a,b2])=>{const nx=x+a,ny=y+b2;if(nx>=0&&ny>=0&&nx<W&&ny<H&&d[ny][nx]>d[y][x]+1){d[ny][nx]=d[y][x]+1;q.push([nx,ny]);}});}
+  let dmax=0;for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(inS(x,y))dmax=Math.max(dmax,d[y][x]);
+  const lerp=(a,b2,t)=>a+(b2-a)*t;
+  let raf,t=0;
+  function frame(){
+    t+=reduce?0:0.004; const p=reduce?0.8:(t%1.25); // 0..1 solidify, then hold
+    cx.clearRect(0,0,cv.width,cv.height);
+    const ox=(cv.width-W*c)/2, oy=(cv.height-H*c)/2;
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+      if(!inS(x,y))continue;
+      const solidAt=(d[y][x]-1)/(dmax)*0.95; // 0..0.95
+      const fs=Math.max(0,Math.min(1,(p-solidAt)/0.12)); // solid fraction
+      const r=Math.round(lerp(255,95,fs)),g=Math.round(lerp(lerp(106,170,(1-solidAt)*0.3),116,fs)),bl=Math.round(lerp(43,135,fs));
+      cx.fillStyle=`rgb(${r},${g},${bl})`;
+      cx.fillRect(ox+x*c+2,oy+y*c+2,c-4,c-4);
+      if(fs<1&&fs>0){cx.fillStyle=`rgba(255,200,120,${0.35*(1-fs)})`;cx.fillRect(ox+x*c+2,oy+y*c+2,c-4,c-4);}
+    }
+    // hotspot marker after mostly solid
+    if(p>0.85){
+      let hx=0,hy=0,n=0;for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(inS(x,y)&&d[y][x]>=dmax){hx+=x;hy+=y;n++;}
+      hx=ox+(hx/n+.5)*c;hy=oy+(hy/n+.5)*c;const a=Math.min(1,(p-0.85)/0.1);
+      cx.save();cx.globalAlpha=a;cx.setLineDash([12,10]);cx.lineWidth=5;cx.strokeStyle='#ffb347';
+      cx.beginPath();cx.arc(hx,hy,70,0,Math.PI*2);cx.stroke();cx.setLineDash([]);
+      cx.fillStyle='#ffb347';cx.font='700 34px "Noto Sans JP",sans-serif';cx.fillText('引け巣リスク',hx+84,hy-50);cx.restore();
+    }
+    raf=requestAnimationFrame(frame);
+  }
+  hooks[0]={enter(){cancelAnimationFrame(raf);t=0;frame();},leave(){cancelAnimationFrame(raf);}};
+})();
+
+/* S3 mini visuals */
+(function(){
+  const ns='http://www.w3.org/2000/svg';
+  const mk=(tag,at)=>{const e=document.createElementNS(ns,tag);for(const k in at)e.setAttribute(k,at[k]);return e;};
+  const vin=document.getElementById('vox-mini'),vout=document.getElementById('vox-out');
+  const shape=(x,y)=>(y>=6&&x<=9)||(x>=2&&x<=7&&y>=1);
+  for(let y=0;y<8;y++)for(let x=0;x<10;x++)if(shape(x,y)){
+    vin.appendChild(mk('rect',{x:x*20+1,y:y*20+6,width:18,height:18,rx:3,fill:'#6ea3d1',opacity:.85}));
+    const dd=Math.min(x-2+1,7-x+1,y-1+1,(y>=6?8-y:99))/3; const hot=Math.max(0,Math.min(1,1-Math.min(Math.abs(x-4.5)/3,1)*.6-Math.abs(y-4)/5));
+    const col=`rgb(${Math.round(95+160*hot)},${Math.round(116+40*hot-70*hot*hot)},${Math.round(135-90*hot)})`;
+    vout.appendChild(mk('rect',{x:x*20+1,y:y*20+6,width:18,height:18,rx:3,fill:col}));
+  }
+  vout.appendChild(mk('circle',{cx:100,cy:96,r:30,fill:'none',stroke:'#ffb347','stroke-width':3,'stroke-dasharray':'6 6',class:'pulse'}));
+  const net=document.getElementById('net');const L=[[3,40],[4,90],[4,140],[3,190]];const pts=[];
+  L.forEach(([n,x],li)=>{pts[li]=[];for(let i=0;i<n;i++){pts[li].push([x,85+(i-(n-1)/2)*36]);}});
+  for(let l=0;l<3;l++)pts[l].forEach(a=>pts[l+1].forEach(b2=>net.appendChild(mk('line',{x1:a[0],y1:a[1],x2:b2[0],y2:b2[1]}))));
+  pts.flat().forEach((p,i)=>{const c=mk('circle',{cx:p[0],cy:p[1],r:8,class:'pulse'});c.style.animationDelay=(i*0.12)+'s';net.appendChild(c);});
+})();
+
+/* S4 chaos -> order */
+(function(){
+  const box=document.getElementById('chaos'),chips=[...box.querySelectorAll('.chip')];
+  function scatter(){chips.forEach((c,i)=>{c.style.left=c.dataset.x+'px';c.style.top=c.dataset.y+'px';c.style.transform=`rotate(${[-4,3,-2,5,-3,2][i]}deg)`;c.classList.add('wobble');c.style.animationDelay=(i*.4)+'s';c.style.borderColor='';});}
+  function order(){chips.forEach((c,i)=>{c.classList.remove('wobble');c.style.left='120px';c.style.top=(i*112+20)+'px';c.style.transform='none';c.style.borderColor='#3fc48f';});}
+  hooks[3]={enter:scatter,step(s){s>=1?order():scatter();}};
+})();
+
+/* S5 bars */
+(function(){
+  const bars=[...document.querySelectorAll('#s5 .hbar')];
+  hooks[4]={enter(){bars.forEach(b2=>b2.style.width='0');},step(s){if(s>=0)setTimeout(()=>bars.forEach((b2,i)=>setTimeout(()=>b2.style.width=b2.dataset.w+'%',i*120)),300);}};
+})();
+
+/* S6 pipeline particles */
+(function(){
+  const cv=document.getElementById('pipe'),cx=cv.getContext('2d');const S=2,Wd=1640,Ht=430;
+  const gx=[150,480,810,1140,1470];// stage centers
+  let P=[],raf,spawnT=0,collected=0;
+  const grid={x0:1380,y0:70,cols:9,cell:26};
+  function spawn(){const bad=Math.random()<0.25;P.push({x:20+Math.random()*200,y:40+Math.random()*350,vx:0,vy:0,bad,stage:0,a:1,slot:-1,wob:Math.random()*6});}
+  function frame(){
+    cx.setTransform(S,0,0,S,0,0);cx.clearRect(0,0,Wd,Ht);
+    // lanes
+    cx.strokeStyle='#2b3642';cx.lineWidth=2;cx.setLineDash([6,8]);cx.beginPath();cx.moveTo(240,215);cx.lineTo(1330,215);cx.stroke();cx.setLineDash([]);
+    // gates
+    [[480,'確認'],[810,'DB'],[1140,'DVC']].forEach(([x,l],i)=>{
+      cx.fillStyle='#1c252f';cx.strokeStyle=i===0?'#ff6a2b':'#6ea3d1';cx.lineWidth=2;
+      cx.beginPath();cx.roundRect(x-60,135,120,160,14);cx.fill();cx.stroke();
+      cx.fillStyle='#e9edf1';cx.font='700 24px "Noto Sans JP",sans-serif';cx.textAlign='center';cx.fillText(l,x,225);
+    });
+    // dataset frame
+    cx.strokeStyle='#3fc48f';cx.lineWidth=2;cx.beginPath();cx.roundRect(grid.x0-16,grid.y0-16,grid.cols*grid.cell+32,300,14);cx.stroke();
+    cx.fillStyle='#3fc48f';cx.font='700 22px "Noto Sans JP",sans-serif';cx.textAlign='center';cx.fillText('学習データセット',grid.x0+grid.cols*grid.cell/2,grid.y0+310);
+    cx.fillStyle='#93a1ae';cx.font='500 20px "Noto Sans JP",sans-serif';cx.fillText('散在する解析ケース',120,26);
+    // particles
+    if(!reduce&&(spawnT++%7===0)&&P.length<140&&collected<90)spawn();
+    for(const p of P){
+      let tx,ty;
+      if(p.stage===0){tx=480;ty=215+Math.sin(p.wob)*50;if(p.x>420){ if(p.bad){p.stage=-1;} else p.stage=1;}}
+      else if(p.stage===1){tx=1140;ty=215+Math.sin(p.wob)*20;if(p.x>1100)p.stage=2;}
+      else if(p.stage===2){if(p.slot<0)p.slot=collected++;tx=grid.x0+(p.slot%grid.cols)*grid.cell+grid.cell/2;ty=grid.y0+Math.floor(p.slot/grid.cols)*grid.cell+grid.cell/2;}
+      if(p.stage===-1){p.vy+=0.25;p.x+=1.5;p.y+=p.vy;p.a-=0.02;}
+      else{const dx=tx-p.x,dy=ty-p.y;p.vx=p.vx*0.85+dx*0.012;p.vy=p.vy*0.85+dy*0.012;const sp=Math.hypot(p.vx,p.vy),m=p.stage===2?8:5;if(sp>m){p.vx*=m/sp;p.vy*=m/sp;}p.x+=p.vx;p.y+=p.vy;}
+      cx.globalAlpha=Math.max(0,p.a);
+      cx.fillStyle=p.stage===2?'#3fc48f':(p.bad?'#e8505b':'#6ea3d1');
+      if(p.stage===2){cx.fillRect(p.x-9,p.y-9,18,18);}else{cx.beginPath();cx.arc(p.x,p.y,7,0,Math.PI*2);cx.fill();}
+      cx.globalAlpha=1;
+    }
+    P=P.filter(p=>p.a>0);
+    if(collected>=90&&P.every(p=>p.stage===2)){collected=0;P=[];}
+    raf=requestAnimationFrame(frame);
+  }
+  hooks[5]={enter(){cancelAnimationFrame(raf);P=[];collected=0;if(reduce){for(let i=0;i<60;i++){P.push({x:0,y:0,stage:2,slot:i,a:1,vx:0,vy:0});}collected=60;P.forEach(p=>{p.x=grid.x0+(p.slot%grid.cols)*grid.cell+13;p.y=grid.y0+Math.floor(p.slot/grid.cols)*grid.cell+13;});}frame();},leave(){cancelAnimationFrame(raf);}};
+})();
+
+/* start */
+const m=/^#s(\d+)$/.exec(location.hash);show(m?(+m[1]-1):0,0);
+})();
+</script>
+</body>
+</html>

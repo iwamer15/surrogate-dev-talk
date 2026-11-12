@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>サロゲート開発の取り組み</title>
+<meta name="description" content="鋳造CAEのサロゲートモデル開発で見えた課題と、学習データを確認・集約するツール開発の報告">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0f141a; --bg2:#131a21; --panel:#1c252f; --line:#2b3642;
+  --ink:#e9edf1; --mute:#93a1ae; --steel:#6ea3d1; --molten:#ff6a2b; --hot:#ffb347; --ok:#3fc48f; --bad:#e8505b;
+  --f:"Noto Sans JP","Yu Gothic UI","Meiryo","Hiragino Sans",sans-serif; --m:"JetBrains Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;scroll-padding-top:72px}
+body{background:var(--bg);color:var(--ink);font-family:var(--f);line-height:1.8;font-size:17px;-webkit-font-smoothing:antialiased}
+a{color:var(--steel)}
+.hl{color:var(--molten)} .ok{color:var(--ok)}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+
+/* nav */
+header.nav{position:sticky;top:0;z-index:10;background:rgba(15,20,26,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+header.nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px;gap:16px}
+.brand{font-family:var(--m);font-size:14px;letter-spacing:.12em;color:var(--mute);white-space:nowrap}
+.brand b{color:var(--molten)}
+nav ul{display:flex;gap:20px;list-style:none;font-size:14px}
+nav a{color:var(--mute);text-decoration:none}
+nav a:hover,nav a.cur{color:var(--ink)}
+.btn{display:inline-flex;align-items:center;gap:8px;background:var(--molten);color:#1a0c05;font-weight:700;text-decoration:none;border-radius:999px;padding:10px 20px;font-size:15px;white-space:nowrap}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn:hover{filter:brightness(1.08)}
+@media (max-width:900px){nav ul{display:none}}
+
+/* hero */
+.hero{padding:72px 0 56px;background:radial-gradient(900px 500px at 80% 40%,#2a170d 0%,transparent 70%)}
+.hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:40px;align-items:center}
+.kicker{font-family:var(--m);font-size:13px;letter-spacing:.18em;color:var(--molten);text-transform:uppercase;margin-bottom:12px}
+h1{font-size:clamp(36px,6vw,64px);font-weight:900;line-height:1.2}
+.hero .sub{font-size:clamp(17px,2.2vw,21px);color:var(--mute);margin-top:20px;line-height:1.7}
+.hero .who{margin-top:28px;font-size:14px;color:var(--mute);border-left:3px solid var(--molten);padding-left:14px}
+.hero .cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:32px}
+#voxel{width:100%;height:auto;aspect-ratio:1520/1240;display:block}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:var(--mute);justify-content:center;margin-top:8px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+@media (max-width:860px){.hero .wrap{grid-template-columns:1fr}}
+
+/* summary strip */
+.tldr{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--bg2)}
+.tldr .wrap{display:grid;grid-template-columns:repeat(3,1fr);gap:0}
+.tldr div.it{padding:26px 22px;border-left:1px solid var(--line)}
+.tldr div.it:first-child{border-left:0}
+.tldr .n{font-family:var(--m);font-size:12px;color:var(--molten);letter-spacing:.14em}
+.tldr p{font-size:16px;margin-top:6px}
+@media (max-width:760px){.tldr .wrap{grid-template-columns:1fr}.tldr div.it{border-left:0;border-top:1px solid var(--line)}.tldr div.it:first-child{border-top:0}}
+
+/* sections */
+section.sec{padding:88px 0;border-bottom:1px solid var(--line)}
+section.sec:nth-of-type(even){background:var(--bg2)}
+h2{font-size:clamp(26px,4vw,40px);font-weight:900;line-height:1.3;margin-bottom:18px}
+.lead{color:var(--mute);font-size:18px;max-width:760px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 24px}
+.card h3{font-size:19px;margin-bottom:6px}
+.card p{color:var(--mute);font-size:15px;line-height:1.7}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+@media (max-width:760px){.grid2,.grid3{grid-template-columns:1fr}}
+.slide-link{display:inline-block;margin-top:28px;font-family:var(--m);font-size:13px;color:var(--mute);text-decoration:none;border-bottom:1px dashed var(--line)}
+.slide-link:hover{color:var(--hot)}
+
+/* cycle */
+.cycle{display:flex;align-items:stretch;gap:10px;margin-top:36px;flex-wrap:wrap}
+.cycle .node{flex:1 1 150px;text-align:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 10px;font-weight:700}
+.cycle .node small{display:block;font-weight:400;color:var(--mute);font-size:13px;margin-top:4px}
+.cycle .node.slow{border-color:var(--bad)}
+.cycle .node.slow small{color:var(--bad);font-family:var(--m)}
+.cycle .ar{align-self:center;color:var(--steel);font-size:22px}
+.loopnote{margin-top:14px;text-align:center;color:var(--mute);font-size:14px}
+.ai{margin:26px auto 0;max-width:640px;text-align:center;background:linear-gradient(90deg,#2a1a10,#3a2010);border:1px solid var(--molten);border-radius:999px;padding:14px 24px;font-weight:700}
+.ai b{color:var(--hot);font-family:var(--m)}
+@media (max-width:760px){.cycle{flex-direction:column}.cycle .ar{transform:rotate(90deg)}}
+
+/* model flow */
+.flow{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:14px;align-items:center;margin:36px 0 24px}
+.flow .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 14px;text-align:center}
+.flow .box svg{width:100%;max-width:200px;height:auto}
+.flow .lbl{font-weight:700;margin-top:8px}
+.flow .s{font-size:13px;color:var(--mute)}
+.flow .ar{color:var(--steel);font-size:24px}
+@media (max-width:760px){.flow{grid-template-columns:1fr}.flow .ar{transform:rotate(90deg);text-align:center}}
+.pulse{animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+.netdots circle{fill:var(--steel)} .netdots line{stroke:#3c4b5a;stroke-width:1.5}
+
+/* chaos */
+.chaos{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:32px}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:15px;transition:border-color .6s,transform .6s}
+.chip small{display:block;font-family:var(--m);font-size:12px;color:var(--bad);margin-top:4px}
+.chaos.done .chip{border-color:var(--ok);transform:none!important}
+.chaos.done .chip small{color:var(--ok)}
+@media (max-width:760px){.chaos{grid-template-columns:1fr}}
+.quote{margin-top:30px;font-size:clamp(20px,3vw,28px);font-weight:900;line-height:1.5}
+
+/* tool mock */
+.tool{display:grid;grid-template-columns:1fr 1.05fr;gap:28px;margin-top:32px;align-items:start}
+.feat{display:flex;flex-direction:column;gap:14px}
+.feat .card{display:flex;gap:16px;align-items:flex-start}
+.feat .ic{flex:none;width:40px;height:40px;border-radius:10px;background:#24303c;display:grid;place-items:center;font-family:var(--m);font-weight:700;color:var(--molten)}
+.mock{background:#0b1015;border:1px solid var(--line);border-radius:12px;overflow:hidden;font-size:14px}
+.mock .bar{background:#18202a;padding:10px 14px;display:flex;gap:8px;align-items:center;font-family:var(--m);font-size:12px;color:var(--mute)}
+.mock .bar i{width:10px;height:10px;border-radius:50%;background:#3a4653;display:inline-block}
+.mock table{width:100%;border-collapse:collapse}
+.mock th,.mock td{padding:10px 12px;border-bottom:1px solid #1d2731;text-align:left}
+.mock th{font-size:12px;color:var(--mute);font-weight:500;font-family:var(--m)}
+.mock td.raw{font-family:var(--m);color:#8792a0}
+.mock td:last-child{width:40%}
+.hbar{height:10px;border-radius:5px;background:linear-gradient(90deg,var(--steel),var(--molten));width:0;transition:width 1.2s cubic-bezier(.2,.7,.2,1)}
+.mock tr.warn td{background:rgba(232,80,91,.08)} .mock tr.warn td.map{color:var(--bad)}
+@media (max-width:860px){.tool{grid-template-columns:1fr}}
+
+/* pipeline */
+#pipe{width:100%;height:auto;aspect-ratio:1640/430;display:block;margin-top:28px;background:var(--bg);border:1px solid var(--line);border-radius:14px}
+.stages{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:16px}
+.stages .card{text-align:center;padding:16px 10px}
+.stages .n{font-family:var(--m);color:var(--molten);font-size:12px;display:block}
+@media (max-width:760px){.stages{grid-template-columns:1fr 1fr}}
+.tag{display:inline-block;font-family:var(--m);font-size:12px;padding:5px 12px;border-radius:999px;border:1px solid var(--line);color:var(--steel);margin:14px 8px 0 0}
+
+/* kpi */
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:40px}
+.kpi{border-top:3px solid var(--molten);padding-top:14px}
+.kpi .v{font-family:var(--m);font-size:clamp(30px,4vw,44px);font-weight:700;color:var(--hot)}
+.kpi .k{color:var(--mute);font-size:15px}
+@media (max-width:760px){.kpis{grid-template-columns:1fr}}
+
+/* stairs */
+.stairs{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:36px;align-items:end}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;position:relative}
+.step:nth-child(1){margin-top:120px}.step:nth-child(2){margin-top:80px}.step:nth-child(3){margin-top:40px}
+.step .no{font-family:var(--m);font-size:12px;color:var(--steel)}
+.step h3{font-size:20px}
+.step p{font-size:14px;color:var(--mute)}
+.step.now{border-color:var(--molten);box-shadow:0 0 30px rgba(255,106,43,.22)}
+.step .here{position:absolute;top:-34px;left:16px;font-family:var(--m);font-size:12px;background:var(--molten);color:#160b05;font-weight:700;padding:4px 10px;border-radius:6px}
+@media (max-width:760px){.stairs{grid-template-columns:1fr}.step:nth-child(n){margin-top:0}.step.now{margin-top:30px}}
+.ask{margin-top:32px}
+
+/* slides index */
+.thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:28px}
+.thumbs a{display:block;text-decoration:none;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;aspect-ratio:16/9;position:relative;transition:border-color .2s,transform .2s}
+.thumbs a:hover{border-color:var(--molten);transform:translateY(-2px)}
+.thumbs .no{font-family:var(--m);font-size:12px;color:var(--molten)}
+.thumbs .t{font-weight:700;font-size:15px;margin-top:6px;line-height:1.4}
+.thumbs .tm{position:absolute;right:14px;bottom:10px;font-family:var(--m);font-size:11px;color:var(--mute)}
+@media (max-width:860px){.thumbs{grid-template-columns:1fr 1fr}}
+.keys{margin-top:22px;color:var(--mute);font-size:14px}
+.keys kbd{font-family:var(--m);background:#26313c;border-radius:5px;padding:1px 7px;margin:0 2px;color:var(--ink)}
+
+footer{padding:36px 0 48px;color:var(--mute);font-size:13px}
+footer .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}
+
+/* reveal */
+.rv{opacity:0;transform:translateY(20px);transition:opacity .6s ease,transform .6s cubic-bezier(.2,.7,.2,1)}
+.rv.on{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.rv,.hbar,.chip{transition:none}.rv{opacity:1;transform:none}.pulse{animation:none}}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <span class="brand"><b>SURROGATE</b> × CAE</span>
+    <nav><ul>
+      <li><a href="#bg">背景</a></li>
+      <li><a href="#model">モデル検討</a></li>
+      <li><a href="#wall">課題</a></li>
+      <li><a href="#check">確認ツール</a></li>
+      <li><a href="#collect">集約ツール</a></li>
+      <li><a href="#result">結論</a></li>
+      <li><a href="#next">今後</a></li>
+    </ul></nav>
+    <a class="btn" href="slides/">▶ スライドで見る</a>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <div class="kicker">Surrogate Model Development</div>
+      <h1>サロゲート開発の<br><span class="hl">取り組み</span></h1>
+      <p class="sub">精度の鍵は、モデルよりも「学習データをどう作るか」。<br>そのためのデータ確認・集約ツールを開発しました。</p>
+      <p class="who">CAE（鋳造解析）担当　岩谷 翔平</p>
+      <div class="cta">
+        <a class="btn" href="slides/">▶ 5分スライドを開く</a>
+        <a class="btn ghost" href="#bg">読み物として見る ↓</a>
+      </div>
+    </div>
+    <div>
+      <canvas id="voxel" width="1520" height="1240" aria-label="ボクセル形状の凝固進行アニメーション"></canvas>
+      <div class="legend"><span><i style="background:#ff6a2b"></i>液相</span><span><i style="background:#5f7487"></i>固相</span><span><i style="background:transparent;border:2px dashed #ffb347"></i>最終凝固部（引け巣リスク）</span></div>
+    </div>
+  </div>
+</section>
+
+<div class="tldr">
+  <div class="wrap">
+    <div class="it"><span class="n">POINT 01</span><p>CAEの検討サイクルを短くするため、凝固・引け巣傾向を<b>数秒で予測</b>するサロゲートを検討</p></div>
+    <div class="it"><span class="n">POINT 02</span><p>検証の結果、精度を左右するのはモデル構造より<b class="hl">学習データの質と量</b></p></div>
+    <div class="it"><span class="n">POINT 03</span><p>データを<b>「確認できる」「集められる」</b>状態にするツールを2つ開発</p></div>
+  </div>
+</div>
+
+<!-- 1 背景 -->
+<section class="sec" id="bg">
+  <div class="wrap">
+    <div class="kicker">01 / 背景</div>
+    <h2 class="rv">CAEの検討サイクルが<span class="hl">長い</span></h2>
+    <p class="lead rv">鋳造解析は「形状受領 → メッシュ作成 → 条件設定 → 計算 → 評価」の流れで進みます。特に計算に時間がかかり、条件を振るたびにこのサイクルを回すため、設計・製造への回答が遅れがちでした。</p>
+    <div class="cycle rv">
+      <div class="node">形状・メッシュ<small>STL → ボクセル</small></div><span class="ar">→</span>
+      <div class="node">条件設定<small>材料・境界条件</small></div><span class="ar">→</span>
+      <div class="node slow">計算<small>1ケース [__] h</small></div><span class="ar">→</span>
+      <div class="node">評価・提案<small>引け巣・湯流れ</small></div>
+    </div>
+    <p class="loopnote rv">↻ 条件を振るたびに繰り返し … 回答まで [__] 日</p>
+    <div class="ai rv">過去の解析結果を学習した AIサロゲートで、凝固・引け巣傾向を <b>数秒</b> で予測</div>
+    <a class="slide-link" href="slides/#s2">スライド 2 で見る →</a>
+  </div>
+</section>
+
+<!-- 2 モデル -->
+<section class="sec" id="model">
+  <div class="wrap">
+    <div class="kicker">02 / 取り組み① モデル検討</div>
+    <h2 class="rv">形状から<span class="hl">凝固時間</span>を予測する</h2>
+    <p class="lead rv">形状をボクセル化して入力し、凝固時間の分布を出力。そこから最後に固まる箇所（最終凝固部）を引け巣リスクとして判定する構成です。形状を扱えるモデルとして GeoTransolver / PhysicsNeMo を検証しました。</p>
+    <div class="flow rv">
+      <div class="box"><svg viewBox="0 0 200 170" id="vox-mini" aria-hidden="true"></svg><div class="lbl">形状（ボクセル）</div><div class="s">STL → 3D格子</div></div>
+      <span class="ar">→</span>
+      <div class="box"><svg viewBox="0 0 220 170" class="netdots" id="net" aria-hidden="true"></svg><div class="lbl">サロゲートモデル</div><div class="s">GeoTransolver / PhysicsNeMo</div></div>
+      <span class="ar">→</span>
+      <div class="box"><svg viewBox="0 0 200 170" id="vox-out" aria-hidden="true"></svg><div class="lbl">凝固時間分布</div><div class="s">→ 最終凝固部 ＝ <span class="hl">引け巣</span>リスク</div></div>
+    </div>
+    <div class="grid2">
+      <div class="card rv"><h3>わかったこと</h3><p>精度を左右するのはモデル構造より <b class="hl">学習データの質と量</b></p></div>
+      <div class="card rv"><h3>検証状況</h3><p>[検証ケース数 __ 件 ／ 誤差 __ %]</p></div>
+    </div>
+    <a class="slide-link" href="slides/#s3">スライド 3 で見る →</a>
+  </div>
+</section>
+
+<!-- 3 課題 -->
+<section class="sec" id="wall">
+  <div class="wrap">
+    <div class="kicker">03 / 見えてきた課題</div>
+    <h2 class="rv">壁はモデルではなく<span class="hl">データ</span>だった</h2>
+    <p class="lead rv">過去の解析データは、次のように散らばった状態でした。この状態のまま学習させても精度は出ません。</p>
+    <div class="chaos" id="chaos">
+      <div class="chip" style="transform:rotate(-1.5deg)">condition_03.dat<small>Shift-JIS / 手で読めない</small></div>
+      <div class="chip" style="transform:rotate(1deg)">部品名「Mold_U」「上型」「UPPER」<small>名称が不統一</small></div>
+      <div class="chip" style="transform:rotate(-.8deg)">熱伝達係数 [__] W/m²K ?<small>ケースごとに違う</small></div>
+      <div class="chip" style="transform:rotate(1.4deg)">result_final_v2_修正.zip<small>どれが最終版？</small></div>
+      <div class="chip" style="transform:rotate(-1deg)">個人PC・共有フォルダに点在<small>所在がわからない</small></div>
+      <div class="chip" style="transform:rotate(.8deg)">実測との対応付けなし<small>正解ラベル不足</small></div>
+    </div>
+    <p class="quote rv">まず <span class="hl">「確認できる」「集められる」</span> 状態にすることが先決。</p>
+    <a class="slide-link" href="slides/#s4">スライド 4 で見る →</a>
+  </div>
+</section>
+
+<!-- 4 確認ツール -->
+<section class="sec" id="check">
+  <div class="wrap">
+    <div class="kicker">04 / 取り組み② データ確認ツール</div>
+    <h2 class="rv">解析条件を<span class="hl">一目で確認</span>する</h2>
+    <p class="lead rv">CAEの条件ファイルを読み込み、部品名を統一名にマッピングし、熱伝達係数などの条件を一覧・グラフで表示します。マッピングできない部品や値の外れを一目で見つけ、学習に使う前にデータの不備を潰せます。</p>
+    <div class="tool">
+      <div class="feat">
+        <div class="card rv"><div class="ic">JP</div><div><h3>Shift-JIS の条件ファイルを読込</h3><p>文字化けなく、そのまま可視化</p></div></div>
+        <div class="card rv"><div class="ic">⇄</div><div><h3>部品名を統一名へマッピング</h3><p>表記ゆれを吸収し、ケース間で比較可能に</p></div></div>
+        <div class="card rv"><div class="ic">h</div><div><h3>熱伝達係数を一覧・グラフ表示</h3><p>設定漏れ・外れ値をその場で発見</p></div></div>
+        <div class="card rv"><div class="ic">PS</div><div><h3>Python 不要で誰でも使える</h3><p>PowerShell ＋ 単体HTML、配布するだけ</p></div></div>
+      </div>
+      <div class="mock rv" id="mock">
+        <div class="bar"><i></i><i></i><i></i>&nbsp;condition_viewer.html — case_[__]</div>
+        <table>
+          <tr><th>元の部品名</th><th>統一名</th><th>熱伝達係数</th></tr>
+          <tr><td class="raw">Mold_U</td><td class="map">上型</td><td><div class="hbar" data-w="72"></div></td></tr>
+          <tr><td class="raw">UPPER_DIE</td><td class="map">上型</td><td><div class="hbar" data-w="70"></div></td></tr>
+          <tr><td class="raw">下型_01</td><td class="map">下型</td><td><div class="hbar" data-w="64"></div></td></tr>
+          <tr><td class="raw">Core_A</td><td class="map">中子</td><td><div class="hbar" data-w="38"></div></td></tr>
+          <tr class="warn"><td class="raw">part_017</td><td class="map">未マッピング</td><td><div class="hbar" data-w="96"></div></td></tr>
+          <tr><td class="raw">Chill_1</td><td class="map">冷し金</td><td><div class="hbar" data-w="88"></div></td></tr>
+          <tr><td class="raw">Sleeve</td><td class="map">スリーブ</td><td><div class="hbar" data-w="30"></div></td></tr>
+        </table>
+      </div>
+    </div>
+    <a class="slide-link" href="slides/#s5">スライド 5 で見る →</a>
+  </div>
+</section>
+
+<!-- 5 集約ツール -->
+<section class="sec" id="collect">
+  <div class="wrap">
+    <div class="kicker">05 / 取り組み③ データ集約ツール</div>
+    <h2 class="rv">散らばったデータを<span class="hl">学習データ</span>へ集約</h2>
+    <p class="lead rv">散らばった解析ケースを収集し、確認ツールのチェックを通ったものだけを登録。バージョン管理したうえで学習用データセットとして書き出します。下のアニメーションの赤い点が不備のあるデータで、確認の段階で除外されます。</p>
+    <canvas id="pipe" width="3280" height="860" aria-label="データが収集・確認・登録を経て学習データセットに整列するアニメーション"></canvas>
+    <div class="stages">
+      <div class="card"><span class="n">01</span><h3>収集</h3><p>各所の解析ケースを取込</p></div>
+      <div class="card"><span class="n">02</span><h3>確認</h3><p>条件・部品名をチェック</p></div>
+      <div class="card"><span class="n">03</span><h3>登録</h3><p>メタ情報付きでDB化</p></div>
+      <div class="card"><span class="n">04</span><h3>版管理</h3><p>DVC + Git で再現可能に</p></div>
+      <div class="card"><span class="n">05</span><h3>出力</h3><p>学習用データセット</p></div>
+    </div>
+    <div><span class="tag">Electron + React + TypeScript</span><span class="tag">FastAPI + SQLite</span><span class="tag">DVC + Git</span><span class="tag">YAML export</span><span class="tag">Windows 配布</span></div>
+    <a class="slide-link" href="slides/#s6">スライド 6 で見る →</a>
+  </div>
+</section>
+
+<!-- 6 結論 -->
+<section class="sec" id="result">
+  <div class="wrap">
+    <div class="kicker">06 / 結論</div>
+    <h2 class="rv">サロゲート精度の土台として<br><span class="hl">学習データの確認・集約ツール</span>を開発した</h2>
+    <div class="kpis rv">
+      <div class="kpi"><div class="v">[__]件</div><div class="k">集約済み解析ケース</div></div>
+      <div class="kpi"><div class="v">[__]→[__]</div><div class="k">1ケースあたりの確認時間</div></div>
+      <div class="kpi"><div class="v">[__]名</div><div class="k">Python不要で使えるメンバー</div></div>
+    </div>
+    <a class="slide-link" href="slides/#s7">スライド 7 で見る →</a>
+  </div>
+</section>
+
+<!-- 7 今後 -->
+<section class="sec" id="next">
+  <div class="wrap">
+    <div class="kicker">07 / 今後</div>
+    <h2 class="rv">土台の上に<span class="hl">予測</span>を積み上げる</h2>
+    <p class="lead rv">標準化と蓄積の土台ができつつあります。次は実測との比較による精度検証（V&amp;V）を経て、AI予測を設計・製造への条件提案に使える段階へ進めます。</p>
+    <div class="stairs">
+      <div class="step rv"><span class="no">STEP 1</span><h3>標準化</h3><p>条件・部品名・フォルダ構成を統一</p></div>
+      <div class="step now rv"><span class="here">いまここ</span><span class="no">STEP 2</span><h3>蓄積</h3><p>確認・集約ツールでデータを貯める</p></div>
+      <div class="step rv"><span class="no">STEP 3</span><h3>V&amp;V</h3><p>実測との比較で精度を検証</p></div>
+      <div class="step rv"><span class="no">STEP 4</span><h3>AI予測</h3><p>設計・製造へ条件を即時提案</p></div>
+    </div>
+    <div class="card ask rv"><h3>ご協力のお願い</h3><p>[過去解析データ・実測データの提供 など]</p></div>
+    <a class="slide-link" href="slides/#s8">スライド 8 で見る →</a>
+  </div>
+</section>
+
+<!-- slides index -->
+<section class="sec" id="slides">
+  <div class="wrap">
+    <div class="kicker">Slides</div>
+    <h2>5分プレゼン（全8枚）</h2>
+    <p class="lead">各カードから該当スライドを直接開けます。発表時はスライドの画面で <b>T</b>（タイマー）と <b>N</b>（話す内容）が使えます。</p>
+    <div class="thumbs">
+      <a href="slides/#s1"><span class="no">01</span><div class="t">タイトル</div><span class="tm">0:20</span></a>
+      <a href="slides/#s2"><span class="no">02</span><div class="t">背景：検討サイクルが長い</div><span class="tm">0:35</span></a>
+      <a href="slides/#s3"><span class="no">03</span><div class="t">モデル検討</div><span class="tm">0:40</span></a>
+      <a href="slides/#s4"><span class="no">04</span><div class="t">課題：壁はデータ</div><span class="tm">0:40</span></a>
+      <a href="slides/#s5"><span class="no">05</span><div class="t">データ確認ツール</div><span class="tm">0:45</span></a>
+      <a href="slides/#s6"><span class="no">06</span><div class="t">データ集約ツール</div><span class="tm">0:50</span></a>
+      <a href="slides/#s7"><span class="no">07</span><div class="t">結論</div><span class="tm">0:40</span></a>
+      <a href="slides/#s8"><span class="no">08</span><div class="t">今後の進め方</div><span class="tm">0:30</span></a>
+    </div>
+    <p class="keys">操作：<kbd>→</kbd><kbd>Space</kbd> 次へ ／ <kbd>←</kbd> 前へ ／ <kbd>T</kbd> タイマー ／ <kbd>N</kbd> ノート ／ <kbd>F</kbd> 全画面 ／ <kbd>?</kbd> ヘルプ</p>
+  </div>
+</section>
+</main>
+
+<footer><div class="wrap"><span>サロゲート開発の取り組み — 学習データ構築を支えるツール開発</span><a href="slides/">スライド版 →</a></div></footer>
+
+<script>
+(()=>{
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* reveal on scroll */
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('on');io.unobserve(e.target);}}),{threshold:.15});
+document.querySelectorAll('.rv').forEach(el=>io.observe(el));
+
+/* nav highlight */
+const links=[...document.querySelectorAll('nav a')];
+const so=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)links.forEach(a=>a.classList.toggle('cur',a.getAttribute('href')==='#'+e.target.id));}),{rootMargin:'-45% 0px -50% 0px'});
+document.querySelectorAll('section.sec').forEach(s=>so.observe(s));
+
+/* run a canvas animation only while visible */
+function whenVisible(el,start,stop){new IntersectionObserver(es=>es.forEach(e=>e.isIntersecting?start():stop()),{threshold:.05}).observe(el);}
+
+/* hero: voxel solidification */
+(function(){
+  const cv=document.getElementById('voxel'),cx=cv.getContext('2d');
+  const W=38,H=31,c=40;
+  const inS=(x,y)=>(y>=22&&y<=28&&x>=2&&x<=35)||(x>=11&&x<=24&&y>=8&&y<=22)||(x>=26&&x<=31&&y>=14&&y<=22)||(x>=5&&x<=9&&y>=17&&y<=22)||(x>=14&&x<=21&&y>=3&&y<=8);
+  const d=[],q=[];for(let y=0;y<H;y++){d[y]=[];for(let x=0;x<W;x++){d[y][x]=inS(x,y)?Infinity:0;if(!inS(x,y))q.push([x,y]);}}
+  for(let i=0;i<q.length;i++){const[x,y]=q[i];[[1,0],[-1,0],[0,1],[0,-1]].forEach(([a,b])=>{const nx=x+a,ny=y+b;if(nx>=0&&ny>=0&&nx<W&&ny<H&&d[ny][nx]>d[y][x]+1){d[ny][nx]=d[y][x]+1;q.push([nx,ny]);}});}
+  let dmax=0;for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(inS(x,y))dmax=Math.max(dmax,d[y][x]);
+  let hx=0,hy=0,n=0;for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(inS(x,y)&&d[y][x]>=dmax){hx+=x;hy+=y;n++;}
+  const lerp=(a,b,t)=>a+(b-a)*t;let raf=0,t=0;
+  function frame(){
+    t+=reduce?0:0.004;const p=reduce?0.95:(t%1.25);
+    cx.clearRect(0,0,cv.width,cv.height);
+    const ox=(cv.width-W*c)/2,oy=(cv.height-H*c)/2;
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+      if(!inS(x,y))continue;
+      const sa=(d[y][x]-1)/dmax*0.95,fs=Math.max(0,Math.min(1,(p-sa)/0.12));
+      cx.fillStyle=`rgb(${Math.round(lerp(255,95,fs))},${Math.round(lerp(lerp(106,170,(1-sa)*0.3),116,fs))},${Math.round(lerp(43,135,fs))})`;
+      cx.fillRect(ox+x*c+2,oy+y*c+2,c-4,c-4);
+      if(fs<1&&fs>0){cx.fillStyle=`rgba(255,200,120,${0.35*(1-fs)})`;cx.fillRect(ox+x*c+2,oy+y*c+2,c-4,c-4);}
+    }
+    if(p>0.85){
+      const X=ox+(hx/n+.5)*c,Y=oy+(hy/n+.5)*c,a=Math.min(1,(p-0.85)/0.1);
+      cx.save();cx.globalAlpha=a;cx.setLineDash([12,10]);cx.lineWidth=5;cx.strokeStyle='#ffb347';
+      cx.beginPath();cx.arc(X,Y,70,0,Math.PI*2);cx.stroke();cx.setLineDash([]);
+      cx.fillStyle='#ffb347';cx.font='700 40px "Noto Sans JP",sans-serif';cx.fillText('引け巣リスク',X+84,Y-50);cx.restore();
+    }
+    if(!reduce)raf=requestAnimationFrame(frame);
+  }
+  whenVisible(cv,()=>{cancelAnimationFrame(raf);frame();},()=>cancelAnimationFrame(raf));
+})();
+
+/* model mini visuals */
+(function(){
+  const ns='http://www.w3.org/2000/svg',mk=(tag,at)=>{const e=document.createElementNS(ns,tag);for(const k in at)e.setAttribute(k,at[k]);return e;};
+  const vin=document.getElementById('vox-mini'),vout=document.getElementById('vox-out');
+  const shape=(x,y)=>(y>=6&&x<=9)||(x>=2&&x<=7&&y>=1);
+  for(let y=0;y<8;y++)for(let x=0;x<10;x++)if(shape(x,y)){
+    vin.appendChild(mk('rect',{x:x*20+1,y:y*20+6,width:18,height:18,rx:3,fill:'#6ea3d1',opacity:.85}));
+    const hot=Math.max(0,Math.min(1,1-Math.min(Math.abs(x-4.5)/3,1)*.6-Math.abs(y-4)/5));
+    vout.appendChild(mk('rect',{x:x*20+1,y:y*20+6,width:18,height:18,rx:3,fill:`rgb(${Math.round(95+160*hot)},${Math.round(116+40*hot-70*hot*hot)},${Math.round(135-90*hot)})`}));
+  }
+  vout.appendChild(mk('circle',{cx:100,cy:96,r:30,fill:'none',stroke:'#ffb347','stroke-width':3,'stroke-dasharray':'6 6',class:'pulse'}));
+  const net=document.getElementById('net'),L=[[3,40],[4,90],[4,140],[3,190]],pts=[];
+  L.forEach(([k,x],li)=>{pts[li]=[];for(let i=0;i<k;i++)pts[li].push([x,85+(i-(k-1)/2)*36]);});
+  for(let l=0;l<3;l++)pts[l].forEach(a=>pts[l+1].forEach(b=>net.appendChild(mk('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1]}))));
+  pts.flat().forEach((p,i)=>{const c=mk('circle',{cx:p[0],cy:p[1],r:8,class:'pulse'});c.style.animationDelay=(i*0.12)+'s';net.appendChild(c);});
+})();
+
+/* chaos -> order when scrolled into view */
+(function(){
+  const box=document.getElementById('chaos');
+  new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)setTimeout(()=>box.classList.add('done'),900);}),{threshold:.6}).observe(box);
+})();
+
+/* check tool bars */
+(function(){
+  const mock=document.getElementById('mock'),bars=[...mock.querySelectorAll('.hbar')];
+  new IntersectionObserver((es,o)=>es.forEach(e=>{if(e.isIntersecting){bars.forEach((b,i)=>setTimeout(()=>b.style.width=b.dataset.w+'%',300+i*120));o.disconnect();}}),{threshold:.4}).observe(mock);
+})();
+
+/* pipeline particles */
+(function(){
+  const cv=document.getElementById('pipe'),cx=cv.getContext('2d'),S=2,Wd=1640,Ht=430;
+  let P=[],raf=0,spawnT=0,collected=0;const grid={x0:1380,y0:70,cols:9,cell:26};
+  function spawn(){P.push({x:20+Math.random()*200,y:40+Math.random()*350,vx:0,vy:0,bad:Math.random()<0.25,stage:0,a:1,slot:-1,wob:Math.random()*6});}
+  function frame(){
+    cx.setTransform(S,0,0,S,0,0);cx.clearRect(0,0,Wd,Ht);
+    cx.strokeStyle='#2b3642';cx.lineWidth=2;cx.setLineDash([6,8]);cx.beginPath();cx.moveTo(240,215);cx.lineTo(1330,215);cx.stroke();cx.setLineDash([]);
+    [[480,'確認'],[810,'DB'],[1140,'DVC']].forEach(([x,l],i)=>{
+      cx.fillStyle='#1c252f';cx.strokeStyle=i===0?'#ff6a2b':'#6ea3d1';cx.lineWidth=2;
+      cx.beginPath();cx.roundRect(x-60,135,120,160,14);cx.fill();cx.stroke();
+      cx.fillStyle='#e9edf1';cx.font='700 24px "Noto Sans JP",sans-serif';cx.textAlign='center';cx.fillText(l,x,225);
+    });
+    cx.strokeStyle='#3fc48f';cx.lineWidth=2;cx.beginPath();cx.roundRect(grid.x0-16,grid.y0-16,grid.cols*grid.cell+32,300,14);cx.stroke();
+    cx.fillStyle='#3fc48f';cx.font='700 22px "Noto Sans JP",sans-serif';cx.textAlign='center';cx.fillText('学習データセット',grid.x0+grid.cols*grid.cell/2,grid.y0+310);
+    cx.fillStyle='#93a1ae';cx.font='500 20px "Noto Sans JP",sans-serif';cx.fillText('散在する解析ケース',120,26);
+    if(!reduce&&(spawnT++%7===0)&&P.length<140&&collected<90)spawn();
+    for(const p of P){
+      let tx,ty;
+      if(p.stage===0){tx=480;ty=215+Math.sin(p.wob)*50;if(p.x>420)p.stage=p.bad?-1:1;}
+      else if(p.stage===1){tx=1140;ty=215+Math.sin(p.wob)*20;if(p.x>1100)p.stage=2;}
+      else if(p.stage===2){if(p.slot<0)p.slot=collected++;tx=grid.x0+(p.slot%grid.cols)*grid.cell+grid.cell/2;ty=grid.y0+Math.floor(p.slot/grid.cols)*grid.cell+grid.cell/2;}
+      if(p.stage===-1){p.vy+=0.25;p.x+=1.5;p.y+=p.vy;p.a-=0.02;}
+      else{const dx=tx-p.x,dy=ty-p.y;p.vx=p.vx*0.85+dx*0.012;p.vy=p.vy*0.85+dy*0.012;const sp=Math.hypot(p.vx,p.vy),m=p.stage===2?8:5;if(sp>m){p.vx*=m/sp;p.vy*=m/sp;}p.x+=p.vx;p.y+=p.vy;}
+      cx.globalAlpha=Math.max(0,p.a);cx.fillStyle=p.stage===2?'#3fc48f':(p.bad?'#e8505b':'#6ea3d1');
+      if(p.stage===2)cx.fillRect(p.x-9,p.y-9,18,18);else{cx.beginPath();cx.arc(p.x,p.y,7,0,Math.PI*2);cx.fill();}
+      cx.globalAlpha=1;
+    }
+    P=P.filter(p=>p.a>0);
+    if(collected>=90&&P.every(p=>p.stage===2)){collected=0;P=[];}
+    if(!reduce)raf=requestAnimationFrame(frame);
+  }
+  function start(){cancelAnimationFrame(raf);if(reduce){P=[];for(let i=0;i<60;i++)P.push({stage:2,slot:i,a:1,vx:0,vy:0,x:grid.x0+(i%grid.cols)*grid.cell+13,y:grid.y0+Math.floor(i/grid.cols)*grid.cell+13});collected=60;}frame();}
+  whenVisible(cv,start,()=>cancelAnimationFrame(raf));
+})();
+})();
+</script>
+</body>
+</html>
